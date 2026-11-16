@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>我的學習紀錄 ＆ 班級求援投票板｜W11 升級版</title>
+  <link rel="stylesheet" href="style.css" />
+  <!-- 從 CDN 載入 Supabase JavaScript SDK 第 2 版 -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <div class="app-shell">
+    <!-- 頂部導覽與狀態列 -->
+    <header class="top-header">
+      <div class="brand-group">
+        <span class="badge-pill">W10 ➔ W11 實名防灌票升級版</span>
+        <h1>我的學習紀錄 ＆ 班級求援投票系統</h1>
+        <p class="subtitle">
+          結合 <strong>Supabase 登入＋RLS 門禁</strong>、<strong>GitHub 版本管理</strong> 與 <strong>Cloudflare 自動部署</strong>：一人一票即時求援，私人學習紀錄只有自己看得到。
+        </p>
+      </div>
+
+      <!-- 已登入使用者資訊列 -->
+      <div id="user-bar" class="user-bar hidden">
+        <div class="user-info">
+          <span class="user-dot"></span>
+          <span class="user-label">目前登入：</span>
+          <strong id="user-email-display"></strong>
+        </div>
+        <button id="logout-btn" type="button" class="btn btn-outline btn-sm">登出帳號</button>
+      </div>
+    </header>
+
+    <!-- 系統提示與白話錯誤訊息橫幅 -->
+    <div id="status-banner" class="status-banner" role="status" aria-live="polite">
+      正在檢查連線設定…
+    </div>
+
+    <!-- 未登入區：Email＋密碼 登入／註冊 -->
+    <section id="auth-section" class="card auth-card">
+      <div class="card-header">
+        <h2>🔐 步驟一：登入或註冊你的專屬帳號</h2>
+        <p class="card-desc">
+          上週 W10 不用登入就能投票；今天升級為<strong>實名驗證防灌票＋個人私密學習紀錄</strong>。請使用真實 Email 與練習用密碼註冊。
+        </p>
+      </div>
+
+      <form id="auth-form" class="form-stack">
+        <div class="form-group">
+          <label for="auth-email">電子信箱（Email）</label>
+          <input
+            id="auth-email"
+            type="email"
+            required
+            autocomplete="email"
+            placeholder="例如：yourname@gms.ndhu.edu.tw"
+          />
+        </div>
+
+        <div class="form-group">
+          <label for="auth-password">密碼（至少 6 個字元，請用練習專用密碼）</label>
+          <input
+            id="auth-password"
+            type="password"
+            required
+            minlength="6"
+            autocomplete="current-password"
+            placeholder="請輸入至少 6 碼密碼"
+          />
+        </div>
+
+        <div class="auth-actions">
+          <button id="login-btn" type="submit" class="btn btn-primary">
+            登入網站
+          </button>
+          <button id="signup-btn" type="button" class="btn btn-secondary">
+            第一次來：註冊
+          </button>
+        </div>
+      </form>
+    </section>
+
+    <!-- 登入後主畫面：左／上為「高級版學生求援投票板」，右／下為「我的私密學習紀錄」 -->
+    <main id="app-section" class="main-grid hidden">
+      <!-- 區塊 A：W10 升級版 — 班級即時求援投票看板 -->
+      <section class="card vote-card">
+        <div class="card-header">
+          <div class="header-row">
+            <span class="section-tag tag-vote">📊 班級互動看板（一人一票防灌票）</span>
+            <span id="current-round-badge" class="round-badge">場次：W11-1</span>
+          </div>
+          <h2 id="board-title">下一段想看老師重做哪一關？</h2>
+          <p class="card-desc">
+            每位登入同學在單一場次限投 1 票（可隨時改投或撤回），投票結果會即時轉成視覺化長條圖，幫老師看出全班最卡哪一關！
+          </p>
+        </div>
+
+        <!-- 場次切換器 -->
+        <div class="round-switcher">
+          <label for="round-select">切換投票場次：</label>
+          <select id="round-select">
+            <option value="W11-1">W11-1｜Supabase 開資料庫與 RLS 門禁</option>
+            <option value="W11-2">W11-2｜推上 GitHub 與 Cloudflare 上線</option>
+            <option value="W10-1">W10-1｜上週複習：試算表與部署按鈕</option>
+          </select>
+        </div>
+
+        <!-- 投票表單 -->
+        <form id="vote-form" class="form-stack">
+          <fieldset id="vote-options-fieldset" class="vote-options-fieldset">
+            <legend>請點選你最想看老師再示範一次的關卡：</legend>
+            <div id="vote-options-list" class="vote-options-list"></div>
+          </fieldset>
+
+          <!-- 新增自訂求援選項 -->
+          <div class="custom-option-box">
+            <label for="custom-option-input">清單裡沒有你卡住的地方？自己加一個選項：</label>
+            <div class="inline-input-row">
+              <input
+                id="custom-option-input"
+                type="text"
+                maxlength="80"
+                placeholder="例如：Cloudflare 出現 Missing entry-point"
+              />
+              <button id="add-option-btn" type="button" class="btn btn-outline btn-sm">
+                ＋ 加入選項
+              </button>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="vote-comment">卡關求援小紙條（選填，匿名顯示在看板上讓老師參考）</label>
+            <input
+              id="vote-comment"
+              type="text"
+              maxlength="120"
+              placeholder="例如：我按了 Run 但沒有看到綠勾…"
+            />
+          </div>
+
+          <label class="checkbox-row" for="sync-to-log">
+            <input id="sync-to-log" type="checkbox" checked />
+            <span>投票時，順便幫我新增一筆到右側「我的私密學習紀錄」</span>
+          </label>
+
+          <div class="vote-actions">
+            <button id="submit-vote-btn" type="submit" class="btn btn-primary">
+              🗳️ 送出／更新我的選票
+            </button>
+            <button id="retract-vote-btn" type="button" class="btn btn-danger-outline hidden">
+              撤回我這場的票
+            </button>
+            <button id="refresh-vote-btn" type="button" class="btn btn-outline">
+              🔄 更新票數
+            </button>
+          </div>
+        </form>
+
+        <!-- 視覺化即時統計結果 -->
+        <div class="vote-results-panel">
+          <div class="results-header">
+            <h3>📈 即時得票排行與視覺化統計</h3>
+            <span id="total-votes-badge" class="total-votes-badge">總票數：0 票</span>
+          </div>
+          <ul id="vote-results-list" class="vote-results-list"></ul>
+        </div>
+      </section>
+
+      <!-- 區塊 B：W11 核心任務 — 我的私密學習紀錄（RLS 門禁保護） -->
+      <section class="card log-card">
+        <div class="card-header">
+          <div class="header-row">
+            <span class="section-tag tag-private">🔒 資料庫 RLS 門禁保護（僅本人可見）</span>
+          </div>
+          <h2>📓 我的學習紀錄</h2>
+          <p class="card-desc">
+            這裡的資料存在 Supabase 的 <code>learning_logs</code> 資料表。因為開啟了 <strong>RLS（資料列門禁）</strong>，就算別人打開同一個網址，也絕對看不到你的紀錄！
+          </p>
+        </div>
+
+        <!-- 新增學習紀錄表單 -->
+        <form id="log-form" class="form-stack">
+          <div class="form-row-two">
+            <div class="form-group">
+              <label for="log-date">日期</label>
+              <input id="log-date" type="date" required />
+            </div>
+            <div class="form-group">
+              <label for="log-minutes">花了幾分鐘（0 ~ 1440）</label>
+              <input
+                id="log-minutes"
+                type="number"
+                min="0"
+                max="1440"
+                value="30"
+                required
+              />
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="log-topic">今天學了什麼（必填）</label>
+            <input
+              id="log-topic"
+              type="text"
+              required
+              maxlength="200"
+              placeholder="例如：學會用 Supabase 設定 RLS 門禁與 Cloudflare 自動部署"
+            />
+          </div>
+
+          <div class="form-group">
+            <label for="log-note">卡在哪裡／心得筆記（可不填）</label>
+            <textarea
+              id="log-note"
+              rows="2"
+              maxlength="1000"
+              placeholder="例如：原本忘記關掉 Confirm email，關掉之後就能直接登入了！"
+            ></textarea>
+          </div>
+
+          <button id="add-log-btn" type="submit" class="btn btn-primary">
+            ➕ 新增一筆學習紀錄
+          </button>
+        </form>
+
+        <!-- 我的學習紀錄清單 -->
+        <div class="logs-list-panel">
+          <div class="results-header">
+            <h3>🗂️ 我的全部紀錄（新的在上面）</h3>
+            <button id="refresh-logs-btn" type="button" class="btn btn-outline btn-sm">
+              重新載入
+            </button>
+          </div>
+          <p id="logs-empty-hint" class="empty-hint">目前還沒有學習紀錄，快在上方新增第一筆吧！</p>
+          <ul id="logs-list" class="logs-list"></ul>
+        </div>
+      </section>
+    </main>
+
+    <!-- 頁尾白話狀態與教學小提醒 -->
+    <footer class="app-footer">
+      <p id="footer-status">狀態就緒｜和 AI 一起寫程式 W11 實作專案</p>
+    </footer>
+  </div>
+
+  <!-- 先載入設定檔，再載入主程式 -->
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
